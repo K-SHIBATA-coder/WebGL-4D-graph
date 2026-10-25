@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>4Dグラフ描画</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <h1>4Dグラフ描画</h1>
+    <details id="helpDetails">
+        <summary>操作方法・データ生成について</summary>
+        <p>円形スライダーをドラッグして回転させ、離すと点と角度が保存されます。各平面の「連続回転」ボタンで回転を開始し、もう一度押すと停止します。キャンバスのドラッグで3D視点を回せます。</p>
+        <p>通常の四変数方程式・複素方程式は4D_generate.py、リーマンゼータ関数は専用の4D_zeta_generate.pyで点群を生成します。式・範囲などはJSON、数値点群はバイナリファイルに保存されます。変数範囲の既定値は各軸とも[-5,5]です。ゼータ関数表示では、臨界線 Re(s)=1/2 を紫色の線で重ねて表示します。</p>
+        <p>式や計算範囲の変更、起動方法、公開手順はREADME.mdを確認してください。</p>
+    </details>
+
+    <main id="graphWorkspace">
+        <section id="canvasPanel" aria-label="3Dグラフ">
+            <canvas id="glCanvas" width="800" height="600"></canvas>
+        </section>
+        <aside id="controlPanel" aria-label="グラフ操作">
+            <button id="datasetToggle" type="button">データを切り替え</button>
+            <div id="displayControls">
+                <button id="colorDisplayButton" type="button">色を使った表示</button>
+                <button id="logArgDisplayButton" type="button">log|y|・arg(y)表示</button>
+                <button id="tetrahedralDisplayButton" type="button">四面体方向へ投影</button>
+                <button id="tesseractDisplayButton" type="button">正八胞体型</button>
+            </div>
+            <p id="displayModeDescription">表示方法を選択してください。log・argは複素データでのみ選択できます。</p>
+            <p id="axisLegend">座標軸: X=赤、Y=緑、Z=青（Wは色でも表示）</p>
+            <p id="rotationAngleLabel">回転角度（rad、0≦θ＜2π）:<br><span id="rotationAngles">XY 0.000 · YZ 0.000 · XZ 0.000 · XW 0.000 · YW 0.000 · ZW 0.000</span></p>
+            <div id="rotationControls"></div>
+            <div id="resetControls">
+                <button id="resetRotation" type="button">回転前の点に戻す</button>
+                <button id="resetCamera" type="button">カメラ位置をもとに戻す</button>
+            </div>
+            <p id="status">データを読み込み中…</p>
+        </aside>
+    </main>
+    <script src="main.js"></script>
+</body>
+</html>

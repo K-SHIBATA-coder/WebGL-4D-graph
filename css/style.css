@@ -1,0 +1,301 @@
+/* Page layout */
+:root {
+    color-scheme: light;
+    font-family: "Segoe UI", "Yu Gothic UI", Meiryo, sans-serif;
+    color: #263244;
+    background: #f3f6fa;
+    font-synthesis: none;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    max-width: 1700px;
+    margin: 12px auto;
+    padding: 0 12px;
+}
+
+h1 {
+    margin: 0 0 8px;
+    color: #18283e;
+    font-size: 1.5rem;
+}
+
+#helpDetails {
+    margin-bottom: 10px;
+    padding: 8px 12px;
+    border: 1px solid #d8e0ea;
+    border-radius: 8px;
+    background: #fff;
+}
+
+#helpDetails summary {
+    color: #38506f;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+#helpDetails p {
+    margin: 8px 0 4px;
+    line-height: 1.55;
+}
+
+/* Keep the plot and controls visible beside each other on desktop. */
+#graphWorkspace {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(280px, 320px);
+    gap: 14px;
+    align-items: start;
+}
+
+#canvasPanel {
+    min-width: 0;
+    display: flex;
+    justify-content: center;
+}
+
+#glCanvas {
+    display: block;
+    width: min(100%, 800px, calc(133.333vh - 180px));
+    max-width: 100%;
+    height: auto;
+    aspect-ratio: 4 / 3;
+    border: 1px solid #98a4b3;
+    border-radius: 5px;
+    background: #fff;
+    box-shadow: 0 2px 10px rgb(28 43 64 / 12%);
+}
+
+/* Compact, independently scrollable control panel. */
+#controlPanel {
+    position: sticky;
+    top: 8px;
+    min-width: 0;
+    max-height: calc(100vh - 16px);
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 12px;
+    border: 1px solid #d3dce7;
+    border-radius: 9px;
+    background: #fff;
+    box-shadow: 0 2px 10px rgb(28 43 64 / 10%);
+    scrollbar-gutter: stable;
+}
+
+button {
+    min-height: 34px;
+    padding: 6px 9px;
+    border: 1px solid #b8c4d2;
+    border-radius: 6px;
+    color: #263244;
+    background: #f7f9fc;
+    font: inherit;
+    line-height: 1.25;
+    cursor: pointer;
+    transition: background-color 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
+}
+
+button:hover:not(:disabled) {
+    border-color: #6b8db6;
+    background: #eaf2fb;
+}
+
+button:focus-visible,
+summary:focus-visible {
+    outline: 3px solid rgb(54 126 196 / 42%);
+    outline-offset: 2px;
+}
+
+button:disabled {
+    color: #7d8794;
+    background: #e9edf2;
+    cursor: not-allowed;
+}
+
+#datasetToggle {
+    width: 100%;
+    min-height: 38px;
+    color: #fff;
+    border-color: #365f8c;
+    background: #416f9f;
+    font-weight: 600;
+}
+
+#datasetToggle:hover {
+    background: #345f8e;
+}
+
+#displayControls {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+    margin-top: 8px;
+}
+
+#displayControls button {
+    min-height: 38px;
+}
+
+#displayModeDescription,
+#axisLegend,
+#rotationAngleLabel,
+#status {
+    margin: 9px 0;
+    overflow-wrap: anywhere;
+    line-height: 1.4;
+}
+
+#displayModeDescription {
+    padding: 8px 9px;
+    border-left: 3px solid #6b8db6;
+    border-radius: 3px;
+    background: #f2f6fb;
+}
+
+#axisLegend {
+    color: #526276;
+    font-size: 0.92rem;
+}
+
+#rotationAngleLabel {
+    margin-bottom: 5px;
+    font-weight: 600;
+}
+
+#rotationAngles {
+    display: block;
+    margin-top: 4px;
+    color: #42536a;
+    font-family: ui-monospace, Consolas, monospace;
+    font-size: 0.85rem;
+    font-weight: 400;
+}
+
+/* The six circular sliders form a compact 3 by 2 grid. */
+#rotationControls {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 5px;
+    margin: 7px 0 10px;
+}
+
+.rotation-control {
+    width: 100%;
+    min-width: 0;
+    padding: 6px 2px;
+    border: 1px solid #e0e6ed;
+    border-radius: 7px;
+    background: #fbfcfe;
+    text-align: center;
+    user-select: none;
+}
+
+.rotation-control-disabled {
+    opacity: 0.48;
+}
+
+.rotation-title {
+    min-height: 1.25em;
+    color: #27384c;
+    font-weight: 700;
+    font-size: 0.88rem;
+}
+
+.rotation-slider {
+    display: block;
+    width: min(96px, 100%);
+    height: auto;
+    margin: 2px auto;
+    touch-action: none;
+    cursor: grab;
+}
+
+.rotation-slider[aria-disabled="true"] {
+    cursor: not-allowed;
+}
+
+.rotation-value {
+    color: #263244;
+    font-family: ui-monospace, Consolas, monospace;
+    font-size: 0.78rem;
+    white-space: nowrap;
+}
+
+.rotation-drag-status {
+    display: block;
+    min-height: 1.2em;
+    color: #66758a;
+    font-size: 0.74rem;
+}
+
+.continuous-rotation-button {
+    display: block;
+    width: 100%;
+    min-height: 30px;
+    margin: 4px auto 0;
+    padding: 4px 2px;
+    font-size: 0.78rem;
+}
+
+#resetControls {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+}
+
+#resetControls button {
+    min-height: 38px;
+}
+
+#status {
+    padding: 8px 9px;
+    border-radius: 5px;
+    color: #526276;
+    background: #f2f4f7;
+    font-size: 0.84rem;
+}
+
+@media (max-width: 900px) {
+    body {
+        margin: 8px auto;
+        padding: 0 8px;
+    }
+
+    #graphWorkspace {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    #canvasPanel {
+        grid-row: 1;
+    }
+
+    #glCanvas {
+        width: min(100%, 800px);
+    }
+
+    #controlPanel {
+        position: static;
+        grid-row: 2;
+        max-height: none;
+        overflow: visible;
+    }
+}
+
+@media (max-width: 520px) {
+    #rotationControls {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .rotation-control {
+        padding: 8px 4px;
+    }
+
+    .rotation-value,
+    .rotation-drag-status,
+    .continuous-rotation-button {
+        font-size: 0.85rem;
+    }
+}
