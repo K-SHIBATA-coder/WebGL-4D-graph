@@ -4,6 +4,6 @@ title: "4Dグラフ描画"
 authors:
   - family-names: "柴田"
     given-names: "皓成"
-version: 0.1.1
+version: 1.0.0
 license: MIT
 repository-code: "https://github.com/K-SHIBATA-coder/WebGL-4D-graph"
