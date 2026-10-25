@@ -2,14 +2,11 @@
 precision highp float;
 
 in vec4 a_position;
-in vec4 a_normal;
-
 uniform vec4 u_axisA;
 uniform vec4 u_axisB;
 uniform float u_angle;
 
 out vec4 tf_position;
-out vec4 tf_normal;
 
 vec4 rotateInPlane(vec4 value) {
     float alpha = dot(value, u_axisA);
@@ -24,6 +21,5 @@ vec4 rotateInPlane(vec4 value) {
 void main() {
     // The axes are normalized in JavaScript from their current start-to-end vectors.
     tf_position = rotateInPlane(a_position);
-    tf_normal = rotateInPlane(a_normal);
     gl_Position = vec4(0.0, 0.0, 0.0, 1.0);
 }

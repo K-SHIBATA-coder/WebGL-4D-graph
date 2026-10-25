@@ -4,6 +4,7 @@ Each point is (x, y, z, w) = (sigma, t, Re(zeta(s)), Im(zeta(s))).
 The equation description is saved to zeta_points.json and numeric arrays to a linked binary file.
 """
 import cmath
+import json
 import math
 from pathlib import Path
 from pointcloud_io import write_binary_bundle
@@ -142,6 +143,34 @@ def generate_critical_line():
     return line
 
 
+def remove_obsolete_binary_files(current_binary):
+    """Remove stale generated zeta arrays while keeping every JSON-referenced file."""
+    referenced = set()
+    for metadata_path in OUTPUT.parent.glob("*.json"):
+        try:
+            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+            if not isinstance(metadata, dict):
+                continue
+            binary = metadata.get("binary", {})
+            if isinstance(binary, dict) and isinstance(binary.get("file"), str):
+                referenced.add(binary["file"])
+        except (OSError, json.JSONDecodeError):
+            # An unrelated or temporarily unreadable manifest should not stop generation.
+            continue
+
+    referenced.add(current_binary.name)
+    removed = 0
+    for old_binary in OUTPUT.parent.glob(f"{BINARY_OUTPUT.stem}_*.bin"):
+        if old_binary.name in referenced:
+            continue
+        try:
+            old_binary.unlink()
+            removed += 1
+        except OSError as error:
+            print(f"警告: 古い点群 {old_binary.name} を削除できませんでした: {error}")
+    return removed
+
+
 def main():
     # Identify poles first; no function values are calculated until this is complete.
     singularities = find_singularities()
@@ -171,10 +200,13 @@ def main():
             f"{OUTPUT.name}または点群バイナリを書き込めませんでした。保存先の空き容量とファイルの使用状態を確認してください。"
         ) from error
 
+    removed_binary_count = remove_obsolete_binary_files(binary_path)
+
     print(
         f"{point_count:,}点と臨界線{critical_count:,}点を {binary_path.name} に保存し、"
         f"式などの情報を {OUTPUT.name} に保存しました。"
-        f"（特異点 {len(singularities)}箇所、除外点 {sum(not point.get('valid', True) for point in points)}点）。"
+        f"（特異点 {len(singularities)}箇所、除外点 {sum(not point.get('valid', True) for point in points)}点、"
+        f"未参照の旧バイナリ {removed_binary_count}個を削除）。"
     )
 
 if __name__ == "__main__":

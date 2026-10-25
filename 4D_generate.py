@@ -10,6 +10,7 @@ Grid points near detected poles are skipped. Install SymPy with:
 """
 import cmath
 import itertools
+import json
 import math
 import sys
 import threading
@@ -26,6 +27,7 @@ except ImportError as error:
     ) from error
 
 OUTPUT = Path(__file__).with_name("data.json")
+BINARY_OUTPUT = OUTPUT.with_suffix(".bin")
 
 # ===== USER SETTINGS: 4変数・複素方程式の範囲と分割数 =====
 # 表示範囲・点の密度を変えたい場合は、この区画を編集してください。
@@ -149,6 +151,68 @@ def make_symbolic_expression(equation_function, mode):
         raise TypeError(
             "function(p)をSymPy式にできませんでした。math関数ではなくsp.sinなどSymPy関数を使ってください。"
         ) from error
+
+
+def find_stationary_points(symbolic_expression, mode):
+    """Find isolated stationary points of a complex map when SymPy can solve them.
+
+    An explicit map uses f'(x+yi)=0. For an implicit complex relation, the
+    candidates satisfy F=0 and the input-direction derivative dF/dx=0.
+    Returned records use [input-real, input-imaginary, output-real, output-imaginary].
+    """
+    if mode not in ("complex", "complex-implicit"):
+        return []
+
+    x, y, z, w = SYMBOLS
+    unknowns = (x, y) if mode == "complex" else tuple(
+        symbol for symbol in SYMBOLS if symbol in symbolic_expression.free_symbols
+    )
+    if not unknowns or x not in unknowns:
+        return []
+
+    derivative = sp.diff(symbolic_expression, x)
+    try:
+        derivative_numerator = sp.together(derivative).as_numer_denom()[0]
+        equations = [sp.re(derivative_numerator), sp.im(derivative_numerator)]
+        if mode == "complex-implicit":
+            value_numerator = sp.together(symbolic_expression).as_numer_denom()[0]
+            equations = [sp.re(value_numerator), sp.im(value_numerator), *equations]
+        equations = [sp.expand(sp.simplify(equation)) for equation in equations]
+        # Avoid a potentially unbounded symbolic search on transcendental fields.
+        if not all(equation.is_polynomial(*unknowns) for equation in equations):
+            return []
+        solutions = sp.solve(equations, unknowns, dict=True, simplify=False)
+    except (NotImplementedError, TypeError, ValueError, sp.SympifyError, RecursionError):
+        return []
+
+    if not isinstance(solutions, list):
+        return []
+    minimum, maximum = (COMPLEX_PARAM_MIN, COMPLEX_PARAM_MAX) if mode == "complex" else (IMPLICIT_MIN, IMPLICIT_MAX)
+    stationary = []
+    seen = set()
+    for solution in solutions:
+        try:
+            values = {symbol: float(sp.N(solution[symbol], 16)) for symbol in unknowns}
+        except (KeyError, TypeError, ValueError, OverflowError):
+            continue
+        if not all(math.isfinite(value) and minimum <= value <= maximum for value in values.values()):
+            continue
+        if mode == "complex":
+            input_x, input_y = values[x], values[y]
+            try:
+                output = complex(sp.N(symbolic_expression.subs({x: input_x, y: input_y}), 16))
+            except (ArithmeticError, TypeError, ValueError, OverflowError):
+                continue
+            point = [input_x, input_y, output.real, output.imag]
+        else:
+            point = [values.get(symbol, 0.0) for symbol in SYMBOLS]
+        if not all(math.isfinite(value) for value in point):
+            continue
+        key = tuple(round(value, 8) for value in point)
+        if key not in seen:
+            seen.add(key)
+            stationary.append(point)
+    return stationary
 
 
 def make_grid_axes(mode, active_symbols=None):
@@ -619,16 +683,48 @@ def generate_complex_equation_points(complex_equation_function, excluded_indices
     return points
 
 
+def remove_obsolete_binary_files(current_binary):
+    """Delete old generated data bundles not referenced by any JSON manifest."""
+    referenced = set()
+    for metadata_path in OUTPUT.parent.glob("*.json"):
+        try:
+            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+            if not isinstance(metadata, dict):
+                continue
+            binary = metadata.get("binary", {})
+            if isinstance(binary, dict) and isinstance(binary.get("file"), str):
+                referenced.add(binary["file"])
+        except (OSError, json.JSONDecodeError):
+            # If any manifest cannot be read, keep all old bundles for safety.
+            print(f"警告: {metadata_path.name}を確認できないため、旧バイナリの削除を中止します。")
+            return 0
+
+    referenced.add(current_binary.name)
+    removed = 0
+    for old_binary in OUTPUT.parent.glob(f"{BINARY_OUTPUT.stem}_*.bin"):
+        if old_binary.name in referenced:
+            continue
+        try:
+            old_binary.unlink()
+            removed += 1
+        except OSError as error:
+            print(f"警告: 古い点群 {old_binary.name} を削除できませんでした: {error}")
+    return removed
+
+
 def write_data(data):
     """Write numeric point arrays to a binary file and descriptive fields to JSON."""
-    binary_base = OUTPUT.with_suffix(".bin")
     try:
-        point_count, _, binary_path = write_binary_bundle(data, OUTPUT, binary_base)
+        point_count, _, binary_path = write_binary_bundle(data, OUTPUT, BINARY_OUTPUT)
     except OSError as error:
         raise OSError(
             f"{OUTPUT.name}または点群バイナリを書き込めませんでした。保存先の空き容量とファイルの使用状態を確認してください。"
         ) from error
-    print(f"{point_count:,}点を {binary_path.name} に保存し、式などの情報を {OUTPUT.name} に保存しました。")
+    removed_binary_count = remove_obsolete_binary_files(binary_path)
+    print(
+        f"{point_count:,}点を {binary_path.name} に保存し、式などの情報を {OUTPUT.name} に保存しました。"
+        f"（未参照の旧バイナリ {removed_binary_count}個を削除）。"
+    )
 def equation_text_from_expression(expression):
     """Format the active SymPy expression for the equation label written to JSON."""
     return sp.sstr(sp.simplify(expression))
@@ -676,6 +772,10 @@ def main():
         excluded_indices, singularity_descriptions = find_singularities(
             symbolic_result, mode, active_symbols
         )
+    stationary_points = []
+    if mode in ("complex", "complex-implicit"):
+        with ActivityStatus("SymPyで複素停留点を探索中"):
+            stationary_points = find_stationary_points(symbolic_result, mode)
     if mode == "complex":
         equation_text = COMPLEX_EQUATION_TEXT
         bounds = [COMPLEX_PARAM_MIN, COMPLEX_PARAM_MAX]
@@ -719,6 +819,7 @@ def main():
         "activeVariables": [str(symbol) for symbol in active_symbols],
         "fixedVariables": [str(symbol) for symbol in SYMBOLS if symbol not in active_symbols],
         "singularities": singularity_descriptions,
+        "stationaryPoints": stationary_points,
         "excludedGridSamples": len(excluded_indices),
         "points": points,
     }

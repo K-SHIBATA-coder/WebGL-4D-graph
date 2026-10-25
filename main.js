@@ -10,6 +10,8 @@ const colorDisplayButton = document.getElementById("colorDisplayButton");
 const logArgDisplayButton = document.getElementById("logArgDisplayButton");
 const tetrahedralDisplayButton = document.getElementById("tetrahedralDisplayButton");
 const tesseractDisplayButton = document.getElementById("tesseractDisplayButton");
+const flatLogArgToggleButton = document.getElementById("flatLogArgToggleButton");
+const logArgSwapButton = document.getElementById("logArgSwapButton");
 const displayModeDescription = document.getElementById("displayModeDescription");
 const displayParams = new URLSearchParams(window.location.search);
 const savedDisplayMode = displayParams.get("renderMode");
@@ -20,6 +22,8 @@ const requestedDisplayMode = ["color", "logarg", "tetrahedral", "tesseract"].inc
         ? "logarg"
         : displayParams.get("projection") === "tetrahedral" ? "tetrahedral" : "color";
 const requestedComplexLogPolarView = requestedDisplayMode === "logarg";
+const requestedFlatLogArgView = requestedComplexLogPolarView && displayParams.get("logArgFlat") === "1";
+const requestedLogArgSwap = requestedComplexLogPolarView && displayParams.get("logArgSwap") === "1";
 const requestedTetrahedralProjection = requestedDisplayMode === "tetrahedral";
 const requestedTesseractProjection = requestedDisplayMode === "tesseract";
 function navigateToDisplayMode(mode) {
@@ -27,12 +31,27 @@ function navigateToDisplayMode(mode) {
     nextUrl.searchParams.set("renderMode", mode);
     nextUrl.searchParams.delete("complexView");
     nextUrl.searchParams.delete("projection");
+    if (mode !== "logarg") {
+        nextUrl.searchParams.delete("logArgFlat");
+        nextUrl.searchParams.delete("logArgSwap");
+    }
+    window.location.assign(nextUrl.href);
+}
+function updateLogArgOption(parameter, enabled) {
+    const nextUrl = new URL(window.location.href);
+    nextUrl.searchParams.set("renderMode", "logarg");
+    if (enabled) nextUrl.searchParams.set(parameter, "1");
+    else nextUrl.searchParams.delete(parameter);
     window.location.assign(nextUrl.href);
 }
 colorDisplayButton.addEventListener("click", () => navigateToDisplayMode("color"));
 logArgDisplayButton.addEventListener("click", () => navigateToDisplayMode("logarg"));
 tetrahedralDisplayButton.addEventListener("click", () => navigateToDisplayMode("tetrahedral"));
 tesseractDisplayButton.addEventListener("click", () => navigateToDisplayMode("tesseract"));
+flatLogArgToggleButton.addEventListener("click", () =>
+    updateLogArgOption("logArgFlat", !requestedFlatLogArgView));
+logArgSwapButton.addEventListener("click", () =>
+    updateLogArgOption("logArgSwap", !requestedLogArgSwap));
 const gl = canvas.getContext("webgl2");
 
 datasetToggleButton.textContent = isZetaData
@@ -115,7 +134,8 @@ function makeView(yaw, pitch, center, cameraDistance) {
     // Use Z as the world-up axis. The camera orbits above the XY plane so X
     // points mostly right, Y points into depth, and Z points mostly upward.
     const cosYaw = Math.cos(yaw), sinYaw = Math.sin(yaw);
-    const elevation = Math.max(-1.45, Math.min(1.45, pitch));
+    // The yaw basis also defines stable screen-right/up directions at either pole.
+    const elevation = Math.max(-Math.PI / 2.0, Math.min(Math.PI / 2.0, pitch));
     const cosElevation = Math.cos(elevation), sinElevation = Math.sin(elevation);
     const [cx, cy, cz] = center;
 
@@ -222,6 +242,10 @@ async function main() {
         (data.equationKind === "complex-implicit" &&
             ["z", "w"].every(symbol => data.activeVariables?.includes(symbol)));
     const useComplexLogPolarView = canUseComplexView && requestedComplexLogPolarView;
+    const isFlatLogArgView = useComplexLogPolarView && requestedFlatLogArgView;
+    // Zeta input coordinates are stored in display-scaled sigma/t units; keep its
+    // established input parametrization instead of pretending those are raw s values.
+    const useLogArgSwap = useComplexLogPolarView && !isZetaData && requestedLogArgSwap;
     const activeDisplayMode = useComplexLogPolarView
         ? "logarg"
         : requestedTetrahedralProjection
@@ -231,13 +255,29 @@ async function main() {
     logArgDisplayButton.disabled = !canUseComplexView || activeDisplayMode === "logarg";
     tetrahedralDisplayButton.disabled = activeDisplayMode === "tetrahedral";
     tesseractDisplayButton.disabled = activeDisplayMode === "tesseract";
+    flatLogArgToggleButton.hidden = !useComplexLogPolarView;
+    flatLogArgToggleButton.textContent = isFlatLogArgView ? "立体log・arg表示に戻す" : "高さ0の色付き平面にする";
+    flatLogArgToggleButton.setAttribute("aria-pressed", isFlatLogArgView ? "true" : "false");
+    logArgSwapButton.hidden = !useComplexLogPolarView || isZetaData;
+    logArgSwapButton.textContent = useLogArgSwap ? "入力を横軸に戻す" : "入力と出力を入れ替える";
+    logArgSwapButton.setAttribute("aria-pressed", useLogArgSwap ? "true" : "false");
+    document.getElementById("resetRotation").disabled = isFlatLogArgView;
+    document.getElementById("resetCamera").disabled = isFlatLogArgView;
     logArgDisplayButton.title = canUseComplexView
         ? "複素出力z+wiのlog|z+wi|を高さ、arg(z+wi)を色相にします。"
         : "log・arg表示は複素方程式・ゼータ関数でのみ選択できます。";
     displayModeDescription.textContent = activeDisplayMode === "logarg"
-        ? isZetaData
-            ? "log・arg表示: 座標=(σ, t, log|ζ(s)|)、色相=arg(ζ(s))。"
-            : "log・arg表示: 座標=(Re(x+yi), Im(x+yi), log|z+wi|)、色相=arg(z+wi)。"
+        ? isFlatLogArgView
+            ? useLogArgSwap
+                ? "高さ0の色付き平面: 座標=(Re(y), Im(y), 0)、色相=arg(x)。4D回転・カメラ回転・照明は停止します。"
+                : isZetaData
+                    ? "高さ0の色付き平面: 座標=(σ, t, 0)、色相=arg(ζ(s))。4D回転・カメラ回転・照明は停止します。"
+                    : "高さ0の色付き平面: 座標=(Re(x), Im(x), 0)、色相=arg(y)。4D回転・カメラ回転・照明は停止します。"
+            : useLogArgSwap
+                ? "log・arg表示（入出力反転）: 座標=(Re(y), Im(y), log|x|)、色相=arg(x)。"
+                : isZetaData
+                    ? "log・arg表示: 座標=(σ, t, log|ζ(s)|)、色相=arg(ζ(s))。"
+                    : "log・arg表示: 座標=(Re(x), Im(x), log|y|)、色相=arg(y)。"
         : activeDisplayMode === "tetrahedral"
             ? "正四面体型: XYZW軸を正四面体の頂点方向へ投影し、枠は正八面体、色は4Dベクトル長（5ごとに反復）です。"
             : activeDisplayMode === "tesseract"
@@ -257,7 +297,7 @@ async function main() {
 
     const renderProgram = createProgram(gl, vertexShader, fragmentShader);
     const rotationProgram = createProgram(
-        gl, rotateVertexShader, rotateFragmentShader, ["tf_position", "tf_normal"]
+        gl, rotateVertexShader, rotateFragmentShader, ["tf_position"]
     );
     const backgroundProgram = createProgram(gl, backgroundVertexShader, backgroundFragmentShader);
     const axesProgram = createProgram(gl, axesVertexShader, axesFragmentShader);
@@ -274,6 +314,9 @@ const pointCount = data.pointCount;
     const criticalLinePositions = data.criticalLinePositions;
     const criticalLinePointCount = data.criticalLineCount;
     const criticalLineStartIndex = pointCount + axisCount * 2;
+    const stationaryPoints = Array.isArray(data.stationaryPoints) ? data.stationaryPoints : [];
+    const stationaryPointCount = stationaryPoints.length;
+    const stationaryStartIndex = criticalLineStartIndex + criticalLinePointCount;
     const boundPairs = data.bounds && data.bounds.length >= 4
         ? [[data.bounds[0], data.bounds[1]], [data.bounds[2], data.bounds[3]]]
         : data.bounds ? [[data.bounds[0], data.bounds[1]]] : [[-5.0, 5.0]];
@@ -336,7 +379,20 @@ const pointCount = data.pointCount;
     }
     // Keep the camera and frame scaled to the input x/y bounds in log-arg view.
     // The transformed log-magnitude is a height value and must not resize the scene.
-    const displayDomainHalfExtent = domainHalfExtent;
+    let displayDomainHalfExtent = domainHalfExtent;
+    if (useComplexLogPolarView) {
+        // In log-arg space, size the square frame from its two visible plane axes,
+        // not from the log-height or the unscaled sigma/t metadata.
+        displayDomainHalfExtent = 0.0;
+        for (let i = 0; i < pointCount; i++) {
+            if (data.validity[i] === 0) continue;
+            const offset = i * 4;
+            const planeX = useLogArgSwap ? data.positions[offset + 2] : data.positions[offset];
+            const planeY = useLogArgSwap ? data.positions[offset + 3] : data.positions[offset + 1];
+            displayDomainHalfExtent = Math.max(displayDomainHalfExtent, Math.abs(planeX), Math.abs(planeY));
+        }
+        displayDomainHalfExtent = Math.max(displayDomainHalfExtent, 1.0e-5);
+    }
     // 軸は自動縮尺後の表示範囲に比例させる。
     const axisHalfLength = Math.max(displayDomainHalfExtent * 1.25 * (requestedTetrahedralProjection ? Math.sqrt(3.0) : 1.0), 1.0e-6);
     const axisPositions = new Float32Array([
@@ -353,7 +409,7 @@ const pointCount = data.pointCount;
     ]);
 
     // 点群と座標軸を同じ配列に置き、回転時に一度のTransform Feedbackで更新する。
-    const vertexCount = criticalLineStartIndex + criticalLinePointCount;
+    const vertexCount = stationaryStartIndex + stationaryPointCount;
     const currentPositions = new Float32Array(vertexCount * 4);
     const currentNormals = new Float32Array(vertexCount * 4);
     const complexHueValues = new Float32Array(pointCount);
@@ -370,8 +426,14 @@ const pointCount = data.pointCount;
             // Keep the parameter-grid location finite while hiding singular samples.
             currentPositions.set([x, y, 0.0, 0.0], sourceOffset);
         } else if (useComplexLogPolarView) {
-            const magnitude = Math.hypot(real, imaginary);
-            currentPositions.set([x, y, Math.log(Math.max(magnitude, 1.0e-3)), 0.0], sourceOffset);
+            const inputMagnitude = Math.hypot(x, y);
+            const outputMagnitude = Math.hypot(real, imaginary);
+            const planeX = useLogArgSwap ? real : x;
+            const planeY = useLogArgSwap ? imaginary : y;
+            const logHeight = isFlatLogArgView ? 0.0 : Math.log(Math.max(
+                useLogArgSwap ? inputMagnitude : outputMagnitude, 1.0e-3
+            ));
+            currentPositions.set([planeX, planeY, logHeight, 0.0], sourceOffset);
         } else if (useComplexOutputCompression) {
             const displayedOutput = displayComplexOutput(real, imaginary);
             currentPositions.set([x, y, displayedOutput[0], displayedOutput[1]], sourceOffset);
@@ -384,8 +446,10 @@ const pointCount = data.pointCount;
             currentPositions[sourceOffset + 2] = real;
             currentPositions[sourceOffset + 3] = imaginary;
         }
-        const outputMagnitude = Math.hypot(real, imaginary);
-        const argument = outputMagnitude > 1.0e-12 ? Math.atan2(imaginary, real) : 0.0;
+        const hueReal = useLogArgSwap ? x : real;
+        const hueImaginary = useLogArgSwap ? y : imaginary;
+        const hueMagnitude = Math.hypot(hueReal, hueImaginary);
+        const argument = hueMagnitude > 1.0e-12 ? Math.atan2(hueImaginary, hueReal) : 0.0;
         complexHueValues[i] = ((argument / TWO_PI) % 1.0 + 1.0) % 1.0;
         currentNormals[sourceOffset] = data.normals[sourceOffset];
         currentNormals[sourceOffset + 1] = data.normals[sourceOffset + 1];
@@ -402,7 +466,12 @@ const pointCount = data.pointCount;
             const real = criticalLinePositions[offset + 2];
             const imaginary = criticalLinePositions[offset + 3];
             if (useComplexLogPolarView) {
-                displayedCriticalLine.set([x, y, Math.log(Math.max(Math.hypot(real, imaginary), 1.0e-3)), 0.0], offset);
+                const planeX = useLogArgSwap ? real : x;
+                const planeY = useLogArgSwap ? imaginary : y;
+                const logHeight = isFlatLogArgView ? 0.0 : Math.log(Math.max(
+                    useLogArgSwap ? Math.hypot(x, y) : Math.hypot(real, imaginary), 1.0e-3
+                ));
+                displayedCriticalLine.set([planeX, planeY, logHeight, 0.0], offset);
             } else if (data.generator === "riemann-zeta") {
                 const output = displayZetaOutput(real, imaginary);
                 displayedCriticalLine.set([x, y, output[0], output[1]], offset);
@@ -411,6 +480,23 @@ const pointCount = data.pointCount;
             }
         }
         currentPositions.set(displayedCriticalLine, criticalLineStartIndex * 4);
+    }
+    for (let i = 0; i < stationaryPointCount; i++) {
+        const [x, y, real, imaginary] = stationaryPoints[i];
+        const offset = (stationaryStartIndex + i) * 4;
+        if (useComplexLogPolarView) {
+            const planeX = useLogArgSwap ? real : x;
+            const planeY = useLogArgSwap ? imaginary : y;
+            const logHeight = isFlatLogArgView ? 0.0 : Math.log(Math.max(
+                useLogArgSwap ? Math.hypot(x, y) : Math.hypot(real, imaginary), 1.0e-3
+            ));
+            currentPositions.set([planeX, planeY, logHeight, 0.0], offset);
+        } else if (useComplexOutputCompression) {
+            const displayedOutput = displayComplexOutput(real, imaginary);
+            currentPositions.set([x, y, displayedOutput[0], displayedOutput[1]], offset);
+        } else {
+            currentPositions.set([x, y, real, imaginary], offset);
+        }
     }
 
     // The visible XYZ range follows the requested graph bounds (normally [-5, 5]),
@@ -441,7 +527,9 @@ const pointCount = data.pointCount;
     const wPerspectiveDistance = Math.max(8.0 * cubeHalfExtent, maximumPointRadius4D, maximumFrameRadius4D) * 1.1;
     // The frame must use the same 4D bounds as the sampled graph to enclose it after rotation.
     const frameHalfExtent = cubeHalfExtent;
-    const sceneRadius = requestedTetrahedralProjection
+    const sceneRadius = isFlatLogArgView
+        ? Math.sqrt(2.0) * cubeHalfExtent
+        : requestedTetrahedralProjection
         ? 2.0 * cubeHalfExtent
         : requestedTesseractProjection
             ? Math.sqrt(3.0) * cubeHalfExtent * wPerspectiveDistance / (wPerspectiveDistance - cubeHalfExtent)
@@ -713,7 +801,8 @@ const pointCount = data.pointCount;
         ...Array.from({length: 8}, (_, corner) => [corner, corner + 8])
     ];
     // Every projection mode frames the same 4D sampling box.
-    const boxEdgePairs = tesseractEdgePairs;
+    const squareEdgePairs = [[0,1], [1,3], [3,2], [2,0]];
+    const boxEdgePairs = isFlatLogArgView ? squareEdgePairs : tesseractEdgePairs;
     const boxVertexCount = boxEdgePairs.length * boxVerticesPerEdge;
     const boxLineStarts = new Float32Array(boxVertexCount * 4);
     const boxLineEnds = new Float32Array(boxVertexCount * 4);
@@ -726,6 +815,15 @@ const pointCount = data.pointCount;
     const boxColor = [0.48, 0.50, 0.53];
 
     function createInitialFramePositions() {
+        if (isFlatLogArgView) {
+            const r = frameHalfExtent;
+            return new Float32Array([
+                -r,-r,0,0, r,-r,0,0, -r,r,0,0, r,r,0,0,
+                0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0,
+                0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0,
+                0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0
+            ]);
+        }
         const cubeCorners = Array.from({length: 8}, (_, corner) => [
             renderSceneCenter[0] + ((corner & 1) ? frameHalfExtent : -frameHalfExtent),
             renderSceneCenter[1] + ((corner & 2) ? frameHalfExtent : -frameHalfExtent),
@@ -805,6 +903,8 @@ const pointCount = data.pointCount;
     const duplicateCountLocation = gl.getAttribLocation(renderProgram, "a_duplicateCount");
     const complexHueLocation = gl.getAttribLocation(renderProgram, "a_complexHue");
     const pointVisibilityLocation = gl.getAttribLocation(renderProgram, "a_pointVisible");
+    const stationaryMarkerModeLocation = gl.getUniformLocation(renderProgram, "u_stationaryMarkerMode");
+    const unlitModeLocation = gl.getUniformLocation(renderProgram, "u_unlitMode");
     const renderVao = gl.createVertexArray();
     gl.bindVertexArray(renderVao);
     gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
@@ -825,6 +925,17 @@ const pointCount = data.pointCount;
     gl.enableVertexAttribArray(pointVisibilityLocation);
     gl.vertexAttribPointer(pointVisibilityLocation, 1, gl.FLOAT, false, 0, 0);
     gl.bindVertexArray(null);
+
+    let stationaryVao = null;
+    if (stationaryPointCount > 0) {
+        stationaryVao = gl.createVertexArray();
+        gl.bindVertexArray(stationaryVao);
+        gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+        gl.enableVertexAttribArray(renderPositionLocation);
+        gl.vertexAttribPointer(renderPositionLocation, 4, gl.FLOAT, false, 0,
+            stationaryStartIndex * 4 * Float32Array.BYTES_PER_ELEMENT);
+        gl.bindVertexArray(null);
+    }
 
     const axesProgramLocations = {
         start: gl.getAttribLocation(axesProgram, "a_lineStart"),
@@ -913,25 +1024,17 @@ const pointCount = data.pointCount;
     const rotationPositionBuffer = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, rotationPositionBuffer);
     gl.bufferData(gl.ARRAY_BUFFER, currentPositions, gl.DYNAMIC_DRAW);
-    const rotationNormalBuffer = gl.createBuffer();
-    gl.bindBuffer(gl.ARRAY_BUFFER, rotationNormalBuffer);
-    gl.bufferData(gl.ARRAY_BUFFER, currentNormals, gl.DYNAMIC_DRAW);
-
     const rotationVao = gl.createVertexArray();
     gl.bindVertexArray(rotationVao);
     const rotationPositionLocation = gl.getAttribLocation(rotationProgram, "a_position");
-    const rotationNormalLocation = gl.getAttribLocation(rotationProgram, "a_normal");
     gl.bindBuffer(gl.ARRAY_BUFFER, rotationPositionBuffer);
     gl.enableVertexAttribArray(rotationPositionLocation);
     gl.vertexAttribPointer(rotationPositionLocation, 4, gl.FLOAT, false, 0, 0);
-    gl.bindBuffer(gl.ARRAY_BUFFER, rotationNormalBuffer);
-    gl.enableVertexAttribArray(rotationNormalLocation);
-    gl.vertexAttribPointer(rotationNormalLocation, 4, gl.FLOAT, false, 0, 0);
 
-    // Transform Feedbackの出力は位置4要素＋法線4要素を頂点ごとに格納する。
+    // 回転の出力は4要素の位置だけ。法線は回転後の投影点群から別途推定する。
     const transformFeedbackBuffer = gl.createBuffer();
     gl.bindBuffer(gl.TRANSFORM_FEEDBACK_BUFFER, transformFeedbackBuffer);
-    gl.bufferData(gl.TRANSFORM_FEEDBACK_BUFFER, vertexCount * 8 * Float32Array.BYTES_PER_ELEMENT, gl.DYNAMIC_READ);
+    gl.bufferData(gl.TRANSFORM_FEEDBACK_BUFFER, vertexCount * 4 * Float32Array.BYTES_PER_ELEMENT, gl.DYNAMIC_READ);
     const transformFeedback = gl.createTransformFeedback();
     gl.bindTransformFeedback(gl.TRANSFORM_FEEDBACK, transformFeedback);
     gl.bindBufferBase(gl.TRANSFORM_FEEDBACK_BUFFER, 0, transformFeedbackBuffer);
@@ -971,14 +1074,21 @@ const pointCount = data.pointCount;
 
     const previewPositions = new Float32Array(vertexCount * 4);
     const previewNormals = new Float32Array(vertexCount * 4);
-    const transformed = new Float32Array(vertexCount * 8);
+    const transformed = new Float32Array(vertexCount * 4);
     const committedAngles = {XY:0, YZ:0, XZ:0, XW:0, YW:0, ZW:0};
     let activeSlider = null;
+    let sliderPreviewFrameHandle = 0;
+    let pendingSliderPreview = null;
     const continuousRotations = new Map();
     let continuousFrameHandle = 0;
     let continuousLastUpdate = 0;
 
-    function updateRenderBuffers(positions, normals, framePositions = currentFramePositions) {
+    function updateRenderBuffers(
+        positions,
+        normals,
+        framePositions = currentFramePositions,
+        {updateNormals = true, updateDuplicates = true} = {}
+    ) {
         rebuildBoxData(framePositions);
         gl.bindBuffer(gl.ARRAY_BUFFER, boxStartBuffer);
         gl.bufferSubData(gl.ARRAY_BUFFER, 0, boxLineStarts);
@@ -986,11 +1096,15 @@ const pointCount = data.pointCount;
         gl.bufferSubData(gl.ARRAY_BUFFER, 0, boxLineEnds);
         gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
         gl.bufferSubData(gl.ARRAY_BUFFER, 0, positions);
-        gl.bindBuffer(gl.ARRAY_BUFFER, normalBuffer);
-        gl.bufferSubData(gl.ARRAY_BUFFER, 0, normals);
-        rebuildDuplicateInfo(positions);
-        gl.bindBuffer(gl.ARRAY_BUFFER, duplicateInfoBuffer);
-        gl.bufferSubData(gl.ARRAY_BUFFER, 0, duplicateInfo);
+        if (updateNormals) {
+            gl.bindBuffer(gl.ARRAY_BUFFER, normalBuffer);
+            gl.bufferSubData(gl.ARRAY_BUFFER, 0, normals);
+        }
+        if (updateDuplicates) {
+            rebuildDuplicateInfo(positions);
+            gl.bindBuffer(gl.ARRAY_BUFFER, duplicateInfoBuffer);
+            gl.bufferSubData(gl.ARRAY_BUFFER, 0, duplicateInfo);
+        }
         rebuildAxisQuadData(positions);
         gl.bindBuffer(gl.ARRAY_BUFFER, axisLineStartBuffer);
         gl.bufferSubData(gl.ARRAY_BUFFER, 0, axisLineStarts);
@@ -1006,26 +1120,43 @@ const pointCount = data.pointCount;
         gl.bindBuffer(gl.ARRAY_BUFFER, null);
     }
 
-    function updateRotationInputBuffers(positions, normals) {
+    function updateRotationInputBuffers(positions) {
         gl.bindBuffer(gl.ARRAY_BUFFER, rotationPositionBuffer);
         gl.bufferSubData(gl.ARRAY_BUFFER, 0, positions);
-        gl.bindBuffer(gl.ARRAY_BUFFER, rotationNormalBuffer);
-        gl.bufferSubData(gl.ARRAY_BUFFER, 0, normals);
         gl.bindBuffer(gl.ARRAY_BUFFER, null);
     }
 
-    function previewRotation(plane, targetAngle, deltaOverride = null) {
+    function scheduleSliderPreview(plane, angle) {
+        pendingSliderPreview = {plane, angle};
+        if (sliderPreviewFrameHandle !== 0) return;
+        sliderPreviewFrameHandle = requestAnimationFrame(() => {
+            sliderPreviewFrameHandle = 0;
+            const pending = pendingSliderPreview;
+            pendingSliderPreview = null;
+            if (pending && activeSlider === pending.plane) {
+                previewRotation(pending.plane, pending.angle, null, true);
+            }
+        });
+    }
+
+    function cancelScheduledSliderPreview() {
+        if (sliderPreviewFrameHandle !== 0) {
+            cancelAnimationFrame(sliderPreviewFrameHandle);
+            sliderPreviewFrameHandle = 0;
+        }
+        pendingSliderPreview = null;
+    }
+
+    function previewRotation(plane, targetAngle, deltaOverride = null, deferLighting = false) {
         const delta = deltaOverride === null ? targetAngle - committedAngles[plane] : deltaOverride;
         if (Math.abs(delta) < 1.0e-8) {
             previewPositions.set(currentPositions);
             previewNormals.set(currentNormals);
             previewFramePositions.set(currentFramePositions);
-            updateRenderBuffers(previewPositions, previewNormals, previewFramePositions);
             return;
         }
 
         // 各プレビューは未確定の点ではなく、保存済みの点を基準に計算する。
-        updateRotationInputBuffers(currentPositions, currentNormals);
         const axisA = "XYZW".indexOf(plane[0]);
         const axisB = "XYZW".indexOf(plane[1]);
         function positiveAxisDirection(axisIndex) {
@@ -1085,20 +1216,22 @@ const pointCount = data.pointCount;
 
         gl.bindBuffer(gl.TRANSFORM_FEEDBACK_BUFFER, transformFeedbackBuffer);
         gl.getBufferSubData(gl.TRANSFORM_FEEDBACK_BUFFER, 0, transformed);
-        for (let i = 0; i < vertexCount; i++) {
-            const source = i * 8;
-            const destination = i * 4;
-            previewPositions[destination] = transformed[source];
-            previewPositions[destination + 1] = transformed[source + 1];
-            previewPositions[destination + 2] = transformed[source + 2];
-            previewPositions[destination + 3] = transformed[source + 3];
-        }
+        previewPositions.set(transformed);
         // Recompute after the 4D rotation and XYZ projection. This is essential
         // for XW/YW/ZW rotations, which move W components into visible XYZ.
-        previewNormals.set(calculateDisplayNormals(previewPositions));
+        if (deferLighting) {
+            // Keep the last committed lighting during movement; estimate exact
+            // projected normals once when dragging or continuous rotation ends.
+            previewNormals.set(currentNormals);
+        } else {
+            previewNormals.set(calculateDisplayNormals(previewPositions));
+        }
         gl.bindBuffer(gl.TRANSFORM_FEEDBACK_BUFFER, null);
         gl.bindVertexArray(null);
-        updateRenderBuffers(previewPositions, previewNormals, previewFramePositions);
+        updateRenderBuffers(previewPositions, previewNormals, previewFramePositions, {
+            updateNormals: !deferLighting,
+            updateDuplicates: !deferLighting,
+        });
     }
 
     function commitPreview(plane) {
@@ -1106,11 +1239,11 @@ const pointCount = data.pointCount;
         currentNormals.set(previewNormals);
         currentFramePositions.set(previewFramePositions);
         committedAngles[plane] = rotationAngles[plane];
-        updateRotationInputBuffers(currentPositions, currentNormals);
-        updateRenderBuffers(currentPositions, currentNormals, currentFramePositions);
+        updateRotationInputBuffers(currentPositions);
     }
 
-    function stopContinuousRotation(plane = null) {
+    function stopContinuousRotation(plane = null, refreshAfterStop = true) {
+        const wasRunning = continuousRotations.size > 0;
         if (plane === null) {
             for (const button of continuousRotations.values()) button.textContent = "連続回転";
             continuousRotations.clear();
@@ -1122,6 +1255,11 @@ const pointCount = data.pointCount;
         if (continuousRotations.size === 0 && continuousFrameHandle !== 0) {
             cancelAnimationFrame(continuousFrameHandle);
             continuousFrameHandle = 0;
+        }
+        if (wasRunning && continuousRotations.size === 0 && refreshAfterStop) {
+            currentNormals.set(calculateDisplayNormals(currentPositions));
+            previewNormals.set(currentNormals);
+            updateRenderBuffers(currentPositions, currentNormals, currentFramePositions);
         }
         updateContinuousButtonAvailability();
     }
@@ -1142,7 +1280,7 @@ const pointCount = data.pointCount;
         for (const plane of continuousRotations.keys()) {
             rotationAngles[plane] = (rotationAngles[plane] + delta) % TWO_PI;
             updateSliderVisual(plane);
-            previewRotation(plane, rotationAngles[plane], delta);
+            previewRotation(plane, rotationAngles[plane], delta, true);
             commitPreview(plane);
         }
         updateRotationAnglesDisplay();
@@ -1168,14 +1306,14 @@ const pointCount = data.pointCount;
     }
 
     function restoreOriginalPoints() {
-        stopContinuousRotation();
+        stopContinuousRotation(null, false);
         currentPositions.set(originalPositions);
         currentNormals.set(originalNormals);
         previewPositions.set(originalPositions);
         previewNormals.set(originalNormals);
         currentFramePositions.set(originalFramePositions);
         previewFramePositions.set(originalFramePositions);
-        updateRotationInputBuffers(currentPositions, currentNormals);
+        updateRotationInputBuffers(currentPositions);
         updateRenderBuffers(currentPositions, currentNormals, currentFramePositions);
         for (const plane of ROTATION_PLANES) {
             rotationAngles[plane] = 0.0;
@@ -1187,13 +1325,14 @@ const pointCount = data.pointCount;
 
     // ===== DISPLAY SETTINGS: カメラの初期視点 =====
     // 初期の左右・見下ろし角を変える場合は、次の2値を調整してください。
-    const initialYaw = 0.5;
-    const initialPitch = 0.35;
+    const initialYaw = isFlatLogArgView ? 0.0 : 0.5;
+    const initialPitch = isFlatLogArgView ? Math.PI / 2.0 : 0.35;
     let yaw = initialYaw;
     let pitch = initialPitch;
     let dragging = false;
     let lastX = 0, lastY = 0;
     canvas.addEventListener("pointerdown", event => {
+        if (isFlatLogArgView) return;
         dragging = true;
         lastX = event.clientX;
         lastY = event.clientY;
@@ -1202,9 +1341,10 @@ const pointCount = data.pointCount;
     canvas.addEventListener("pointerup", () => dragging = false);
     canvas.addEventListener("pointercancel", () => dragging = false);
     canvas.addEventListener("pointermove", event => {
-        if (!dragging) return;
+        if (!dragging || isFlatLogArgView) return;
         yaw -= (event.clientX - lastX) * 0.008;
-        pitch += (event.clientY - lastY) * 0.008;
+        pitch = Math.max(-Math.PI / 2.0, Math.min(Math.PI / 2.0,
+            pitch + (event.clientY - lastY) * 0.008));
         lastX = event.clientX;
         lastY = event.clientY;
     });
@@ -1260,7 +1400,7 @@ const pointCount = data.pointCount;
             state.svg.style.cursor = state.enabled ? "grab" : "not-allowed";
             state.dragStatus.textContent = state.enabled
                 ? "ドラッグして回転"
-                : "log・arg表示ではW回転不可";
+            : isFlatLogArgView ? "平面表示では回転不可" : "log・arg表示ではW回転不可";
         }
         updateContinuousButtonAvailability();
     }
@@ -1291,14 +1431,16 @@ const pointCount = data.pointCount;
         title.textContent = `${plane}回転`;
         item.appendChild(title);
 
-        const rotationPlaneEnabled = !useComplexLogPolarView || !plane.includes("W");
+        const rotationPlaneEnabled = !isFlatLogArgView && (!useComplexLogPolarView || !plane.includes("W"));
         const svg = makeSvgElement("svg", {viewBox:"0 0 100 100", width:"96", height:"96", role:"slider"});
         svg.classList.add("rotation-slider");
         svg.setAttribute("aria-label", `${plane}平面の回転角度`);
         svg.setAttribute("aria-disabled", rotationPlaneEnabled ? "false" : "true");
         if (!rotationPlaneEnabled) {
             item.classList.add("rotation-control-disabled");
-            item.title = "log・arg表示ではW軸を使わないため、この回転は無効です。";
+            item.title = isFlatLogArgView
+                ? "色付き平面表示では形を平面に保つため4D回転は無効です。"
+                : "log・arg表示ではW軸を使わないため、この回転は無効です。";
         }
         svg.setAttribute("aria-valuemin", "0");
         svg.setAttribute("aria-valuemax", TWO_PI.toString());
@@ -1360,7 +1502,7 @@ const pointCount = data.pointCount;
             rotationAngles[plane] = angleAtPointer(event, svg);
             updateRotationAnglesDisplay();
             updateSliderVisual(plane);
-            previewRotation(plane, rotationAngles[plane]);
+            previewRotation(plane, rotationAngles[plane], null, true);
         });
 
         svg.addEventListener("pointermove", event => {
@@ -1368,11 +1510,12 @@ const pointCount = data.pointCount;
             rotationAngles[plane] = angleAtPointer(event, svg);
             updateRotationAnglesDisplay();
             updateSliderVisual(plane);
-            previewRotation(plane, rotationAngles[plane]);
+            scheduleSliderPreview(plane, rotationAngles[plane]);
         });
 
         svg.addEventListener("pointerup", event => {
             if (activeSlider !== plane) return;
+            cancelScheduledSliderPreview();
             rotationAngles[plane] = angleAtPointer(event, svg);
             updateRotationAnglesDisplay();
             updateSliderVisual(plane);
@@ -1385,6 +1528,7 @@ const pointCount = data.pointCount;
 
         svg.addEventListener("pointercancel", () => {
             if (activeSlider !== plane) return;
+            cancelScheduledSliderPreview();
             rotationAngles[plane] = committedAngles[plane];
             previewPositions.set(currentPositions);
             previewNormals.set(currentNormals);
@@ -1404,14 +1548,19 @@ const pointCount = data.pointCount;
     gl.enable(gl.DEPTH_TEST);
     gl.clearColor(1.0, 1.0, 1.0, 1.0);
     const displayModeLabel = useComplexLogPolarView
-        ? isZetaData
-            ? "座標=(σ, t, log|ζ(s)|)、色相=arg(ζ(s))"
-            : "座標=(Re(x+yi), Im(x+yi), log|z+wi|)、色相=arg(z+wi)"
+        ? isFlatLogArgView
+            ? useLogArgSwap ? "平面=(Re(y), Im(y), 0)、色相=arg(x)" : "平面=(Re(x), Im(x), 0)、色相=arg(y)"
+            : useLogArgSwap ? "座標=(Re(y), Im(y), log|x|)、色相=arg(x)"
+                : isZetaData ? "座標=(σ, t, log|ζ(s)|)、色相=arg(ζ(s))"
+                    : "座標=(Re(x), Im(x), log|y|)、色相=arg(y)"
         : isComplexEquationData ? "複素曲面の接平面法線" : "投影点群の外側境界法線";
     let skippedSingularityPoints = 0;
     for (let i = 0; i < pointCount; i++) skippedSingularityPoints += data.validity[i] === 0 ? 1 : 0;
     const singularityLabel = skippedSingularityPoints > 0
         ? ` · 特異点周辺の${skippedSingularityPoints}点を除外`
+        : "";
+    const stationaryLabel = stationaryPointCount > 0
+        ? ` · 停留点${stationaryPointCount}か所を黒点表示`
         : "";
     const outputScaleLabel = useComplexOutputCompression
         ? " · 複素出力は極端値を滑らかに圧縮表示"
@@ -1419,7 +1568,7 @@ const pointCount = data.pointCount;
     const projectionLabel = requestedTetrahedralProjection
         ? " · 四面体投影・正八面体枠・4D長さ色相"
         : requestedTesseractProjection ? " · 正八胞体型・w中心投影" : "";
-    status.textContent = `${pointCount.toLocaleString()}点を表示中${singularityLabel}${outputScaleLabel}${projectionLabel} · ${displayModeLabel} · ${data.equation}`;
+    status.textContent = `${pointCount.toLocaleString()}点を表示中${singularityLabel}${stationaryLabel}${outputScaleLabel}${projectionLabel} · ${displayModeLabel} · ${data.equation}`;
 
     function render() {
         const dpr = window.devicePixelRatio || 1;
@@ -1481,9 +1630,21 @@ const pointCount = data.pointCount;
         gl.uniform1f(colorWMaxLocation, colorWMax);
         gl.uniform1i(boundaryOnlyLocation, isComplexEquationData ? 0 : 1);
         gl.uniform1i(complexHueModeLocation, useComplexLogPolarView ? 1 : 0);
+        gl.uniform1i(unlitModeLocation, isFlatLogArgView ? 1 : 0);
+        gl.uniform1i(stationaryMarkerModeLocation, 0);
         // 約0.8秒ごとに重なりグループ内の表示点を次へ進める。
         gl.uniform1f(duplicateStepLocation, Math.floor(performance.now() / 800.0));
         gl.drawArrays(gl.POINTS, 0, pointCount);
+        if (stationaryVao !== null) {
+            gl.disable(gl.DEPTH_TEST);
+            gl.uniform1i(stationaryMarkerModeLocation, 1);
+            gl.uniform1f(pointSizeLocation, Math.max(10.0, pointSizePixels * 1.8) * dpr);
+            gl.bindVertexArray(stationaryVao);
+            gl.drawArrays(gl.POINTS, 0, stationaryPointCount);
+            gl.uniform1i(stationaryMarkerModeLocation, 0);
+            gl.uniform1f(pointSizeLocation, pointSizePixels * dpr);
+            gl.enable(gl.DEPTH_TEST);
+        }
 
         // 軸はGL.LINES/gl.lineWidthに依存せず、画面上で一定幅の三角形として描画する。
         gl.useProgram(axesProgram);
@@ -1499,10 +1660,11 @@ const pointCount = data.pointCount;
         gl.uniform1f(axesEndpointThresholdLocation, 20.0 * dpr);
         gl.uniform1f(axesDepthOffsetLocation, 0.0);
         gl.uniform1i(axesDrawEndpointLocation, 0);
-        gl.drawArrays(gl.TRIANGLES, 0, axisVertexCount);
+        const visibleAxisVertexCount = isFlatLogArgView ? axisVerticesPerLine * 2 : axisVertexCount;
+        gl.drawArrays(gl.TRIANGLES, 0, visibleAxisVertexCount);
         // 軸をほぼ真正面から見た場合は、帯や矢じりを隠して正方向端点を丸く表示する。
         gl.uniform1i(axesDrawEndpointLocation, 1);
-        for (let endpointVertex = 8; endpointVertex < axisVertexCount; endpointVertex += axisVerticesPerLine) {
+        for (let endpointVertex = 8; endpointVertex < visibleAxisVertexCount; endpointVertex += axisVerticesPerLine) {
             gl.drawArrays(gl.POINTS, endpointVertex, 1);
         }
         gl.uniform1i(axesDrawEndpointLocation, 0);

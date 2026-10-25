@@ -67,7 +67,7 @@ void main() {
     // Scalar 4D level sets project to a 3D volume. Render only the points
     // identified on that volume's estimated exterior boundary.
     if (u_boundaryOnly == 1 && normalLength < 0.1) discard;
-    const float minimumLight = 0.4;
+    const float minimumLight = 0.7;
     float diffuseLight = max(dot(normalize(v_normal), normalize(vec3(0.4,0.7,1.0))), 0.0);
     float light = normalLength < 0.1 ? minimumLight :
         minimumLight + (1.0 - minimumLight) * diffuseLight;
