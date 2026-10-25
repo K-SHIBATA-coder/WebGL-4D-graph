@@ -1,0 +1,9 @@
+cff-version: 1.2.0
+message: "このソフトウェアを研究で使用した場合は、次の情報で引用してください。"
+title: "4Dグラフ描画"
+authors:
+  - family-names: "柴田"
+    given-names: "皓成"
+version: 0.1.1
+license: MIT
+repository-code: "<GitHubリポジトリのURL>"
